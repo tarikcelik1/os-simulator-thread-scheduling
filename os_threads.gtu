@@ -1,0 +1,907 @@
+#====================================================================
+# INSTRUCTIONS
+#====================================================================
+
+
+# SET B A    --> Direct Set : Set the Ath memory location with number B. Example: SET 20, 100 writes the value of -20 to memory location 100. 
+# CPY A1 A2  --> Direct Copy: Copy the content of memory location A1 to memory A2. Example: CPY 100, 120 copies the memory value of address 100 to the memory address 120 
+# CPYI A1 A2 --> Indirect Copy: Copy the memory address indexed by A1 to memory address A2. Example: CPYI 100, 102: if memory address 100 contains 200, then this instruction copies the contents of memory address 200 to memory location 120. 
+# CPYI2 A1 A2 --> Indirect Copy 2: Copy the memory address indexed by A1 to memory address indexed by A2. Example: CPYI2 100, 120: if memory address 100 contains 200, and 120 contains 300 then this instruction copies the contents of memory address 200 to memory location 300. 
+# ADD A B    --> Add number B to memory location A 
+# ADDI A1 A2 --> Indirect Add: Add the contents of memory address A2 to address A1. 
+# SUBI A1 A2 --> Indirect Subtraction: Subtract the contents of memory address A2 from address A1, put the result in A2 
+# JIF A C    --> Set the CPU program counter with C if memory location A content is less than or equal to 0 
+# PUSH A     --> Push memory A onto the stack. Stack grows downwards. 
+# POP A      --> Pop value from stack into memory A. 
+# CALL C     --> Call subroutine at instruction C, push return address. 
+# RET        --> Return from subroutine by popping return address. 
+# HLT        --> Halts the CPU 
+# USER A     --> Switch to user mode and jump to address contained at location Ard
+# SYSCALL PRN A --> Calls the operting system service. This system call prints the contents of memory address A to the console followed by a new line character. This system call will block the calling thread for 100 instruction executions. 
+# SYSCALL HLT   --> Calls the operting system service. Shuts down the thread
+# SYSCALL YIELD --> Calls the operting system service. Yields the CPU so OS can schedule other threads. 
+
+#================================================================================================================
+
+
+# ====================================================================== #
+# GTU-C312 OS + Round-Robin Scheduler + SYSCALL Handler + User Threads   #
+# ====================================================================== #
+
+# ─────────────────────────────────────────────
+#  DATA SEGMENT
+# ─────────────────────────────────────────────
+Begin Data Section
+
+0 100         # PC – kernel başlatma adresi
+1 999         # SP – OS için stack tepe noktası
+2  0          # SYSCALL sonucunu tutar
+3  0          # Çalıştırılan instruction sayacı
+
+
+
+
+# OS global değişkenler & sayıcılar
+150 0           # current_tid
+151 30          # thread‐table slot offset (başlangıç = address 10)
+153 10          # active_user_threads
+156 10          # table entry size 
+
+# enum’lar
+160 1           # READY
+161 2           # RUNNING
+162 3           # BLOCKED
+163 4           # TERMINATED
+
+180 10          # toplam aktif kullanıcı thread sayısı
+
+190 131         # max thread table thread state address 
+
+200 0           #old threads state adress holder for after context switch
+
+300 10          #For using as constant 10 value
+
+600 0           #INSTRUCTOUN EXECUTION COUNT STARTING POINT
+
+# Mesaj pointer’ları (SYSCALL PRN ile yazdırılacak)
+702  "OPERATING SYSTEM SHUTTING DOWN !"
+
+
+# ── THREAD #1 dataları (sort) ──
+1500  13        # N
+1501  42        # array[0]
+1502  17        # array[1]
+1503  29        # array[2]
+1504  13        # array[3]
+1505  8         # array[4]
+1506  32        # array[5]
+1507  86        # array[6]
+1508  125       # array[7]
+1509  46        # array[8]
+1510  82        # array[9]
+1511  6         # array[10]
+1512  3         # array[11]
+1513  1999      # array[12]
+
+
+
+# Message data of thread 1
+1700 "--------------------------THREAD-1-------------------------------"
+1701 "Original array: "
+1702 "Sorting complete!"
+1703 "Sorted array: "
+1704 "--------------------------THREAD-1---HALTED!--------------------"
+
+
+
+
+
+
+# ================= Thread #2 dataları (linear search) ====================
+
+
+# pointers expected by the search routine
+2500 2600       # → N
+2501 2601       # → KEY
+2502 2602       # → array[0]
+
+# outputs will appear here
+2512 0          # FOUND flag (initially 0)
+2513 -1         # INDEX     (initially –1)
+
+
+
+
+
+# store real values somewhere free — here I choose 2600-2603
+2600 10         # N value
+2601 71         # KEY value
+2602 15         # array[0]
+2603 27         # array[1]
+2604 33         # array[2]
+2605 16         # array[3]
+2606 55         # array[4]
+2607 42         # array[5]
+2608 19         # array[6]
+2609 71         # array[7]
+2610 86         # array[8]
+2611 66         # array[9]
+
+
+
+#Message data of thread 2
+2700 "--------------------------THREAD-2-------------------------------"
+2701 "Thread 2: Searching for key: "
+2702 "Thread 2: in array of size: "
+2703 "Thread 2: Key found at position: "
+2704 "Thread 2: Key not found in array"
+2705 "Thread 2: search complete!"
+2706 "--------------------------THREAD-2---HALTED!--------------------"
+
+# ── Thread #3 dataları (Factorial) ──
+3500 15    # length
+
+3600 "--------------------------THREAD-3-------------------------------"
+3601 "Calculating Factorial of : "
+3602 "Result : "
+3603 "--------------------------THREAD-3---HALTED!---------------------"
+
+
+#-----THREAD 4 DATA
+4500 "--------------------------THREAD-4-------------------------------"
+4501 "Ben "
+4502 "Tarık "
+4503 "Çelik "
+4504 "Nasılsın "
+4505 "İyi misin?"
+4506 "--------------------------THREAD-4---HALTED!---------------------"
+
+#====THREAD-5 DATA==
+5500 10          # N
+5700 "--------------------------THREAD-5-------------------------------"
+5701 "--------------------------THREAD-5---HALTED!---------------------"
+
+#====THREAD-6 DATA==
+6500 "--------------------------THREAD-6-------------------------------"
+6501 "--------------------------THREAD-6---HALTED!---------------------"
+
+#====THREAD-7 DATA==
+7500 "--------------------------THREAD-7-------------------------------"
+7501 "--------------------------THREAD-7---HALTED!---------------------"
+
+# THREAD 8 DATA
+8500 "--------------------------THREAD-8-------------------------------"
+8501 "--------------------------THREAD-8---HALTED!---------------------"
+
+#====THREAD-9 DATA==
+9500 "--------------------------THREAD-9-------------------------------"
+9501 "--------------------------THREAD-9---HALTED!---------------------"
+
+#====THREAD-10 DATA==
+10500 "--------------------------THREAD-10-------------------------------"
+10501 "--------------------------THREAD-10---HALTED!---------------------"
+
+
+
+End Data Section
+
+
+# ─────────────────────────────────────────────
+#  INSTRUCTION SEGMENT – KERNEL + THREADS
+# ─────────────────────────────────────────────
+
+Begin Instruction Section
+
+#====================================================================
+#  OS + Scheduler + Context-Switch + Syscall Handler (100–380)
+#====================================================================
+
+#==========THREAD-TABLE INITIALISATION==========
+
+
+#======OS-THREAD======
+100 SET 0 30            # Thread ID
+101 SET 2 31            # Thread State (2 = Running)
+102 SET 100 32          # Thread PC
+103 SET 999 33          # Thread Stack Pointer
+104 SET 0 34            # Thread Starting PC
+105 SET 0 35            # Thread Print Syscall PC
+106 SET 0 36            # CPU USAGE / NUM OF INST. EXECUTED
+107 SET 107 0           # JMP → 108
+
+#======USER-THREAD-1======
+108 SET 1 40            # Thread ID
+109 SET 1 41            # Thread State (1 = Ready)
+110 SET 1000 42         # Thread PC
+111 SET 1999 43         # Thread Stack Pointer
+112 SET 0 44            # Thread Starting PC
+113 SET 0 45            # Thread Print Syscall PC
+114 SET 0 46            # CPU USAGE / NUM OF INST. EXECUTED
+
+#======USER-THREAD-2======
+115 SET 2 50            # Thread ID
+116 SET 1 51            # Thread State (1 = Ready)
+117 SET 2000 52         # Thread PC
+118 SET 2999 53         # Thread Stack Pointer
+119 SET 0 54            # Thread Starting PC
+120 SET 0 55            # Thread Print Syscall PC
+121 SET 0 56            # CPU USAGE / NUM OF INST. EXECUTED
+
+
+#======USER-THREAD-3======
+122 SET 3 60            # Thread ID
+123 SET 1 61            # Thread State (1 = Ready)
+124 SET 3000 62         # Thread PC
+125 SET 3999 63         # Thread Stack Pointer
+126 SET 0 64            # Thread Starting PC
+127 SET 0 65            # Thread Print Syscall PC
+128 SET 0 66            # CPU USAGE / NUM OF INST. EXECUTED
+
+#======USER-THREAD-4======
+129 SET 4 70            # Thread ID
+130 SET 1 71            # Thread State (1 = Ready)
+131 SET 4000 72         # Thread PC
+132 SET 4999 73         # Thread Stack Pointer
+133 SET 0 74            # Thread Starting PC
+134 SET 0 75            # Thread Print Syscall PC
+135 SET 0 76            # CPU USAGE / NUM OF INST. EXECUTED
+
+#======USER-THREAD-5======
+136 SET 5 80            # Thread ID
+137 SET 1 81            # Thread State (1 = Ready)
+138 SET 5000 82         # Thread PC
+139 SET 5999 83         # Thread Stack Pointer
+140 SET 0 84            # Thread Starting PC
+141 SET 0 85            # Thread Print Syscall PC
+142 SET 0 86            # CPU USAGE / NUM OF INST. EXECUTED
+
+#======USER-THREAD-6======
+143 SET 6 90            # Thread ID
+144 SET 1 91            # Thread State (1 = Ready)
+145 SET 6000 92         # Thread PC
+146 SET 6999 93         # Thread Stack Pointer
+147 SET 0 94            # Thread Starting PC
+148 SET 0 95            # Thread Print Syscall PC
+149 SET 0 96            # CPU USAGE / NUM OF INST. EXECUTED
+
+#======USER-THREAD-7======
+150 SET 7 100           # Thread ID
+151 SET 1 101           # Thread State (1 = Ready)
+152 SET 7000 102        # Thread PC
+153 SET 7999 103        # Thread Stack Pointer
+154 SET 0 104           # Thread Starting PC
+155 SET 0 105           # Thread Print Syscall PC
+156 SET 0 106           # CPU USAGE / NUM OF INST. EXECUTED
+
+#======USER-THREAD-8======
+157 SET 8 110           # Thread ID
+158 SET 1 111           # Thread State (1 = Ready)
+159 SET 8000 112        # Thread PC
+160 SET 8999 113        # Thread Stack Pointer
+161 SET 0 114           # Thread Starting PC
+162 SET 0 115           # Thread Print Syscall PC
+163 SET 0 116           # CPU USAGE / NUM OF INST. EXECUTED
+
+#======USER-THREAD-9======
+164 SET 9 120           # Thread ID
+165 SET 1 121           # Thread State (1 = Ready)
+166 SET 9000 122        # Thread PC
+167 SET 9999 123        # Thread Stack Pointer
+168 SET 0 124           # Thread Starting PC
+169 SET 0 125           # Thread Print Syscall PC
+170 SET 0 126           # CPU USAGE / NUM OF INST. EXECUTED
+
+#======USER-THREAD-10======
+171 SET 10 130          # Thread ID
+172 SET 1 131           # Thread State (1 = Ready)
+173 SET 10000 132       # Thread PC
+174 SET 10999 133       # Thread Stack Pointer
+175 SET 0 134           # Thread Starting PC
+176 SET 0 135           # Thread Print Syscall PC
+177 SET 0 136           # CPU USAGE / NUM OF INST. EXECUTED
+
+
+178 SET 199 0           # JUMP 200
+
+
+# ==== 100–102: OS_INIT ====
+200 CPY 180 153         # active_user_threads ← total_user_threads (mem180)
+201 SET 0 150           # current_tid ← 0
+202 SET 231 0           # JMP → 230
+
+# ==== 132–134: OS_START & shutdown check ====
+232 JIF 153 500         # if active_user_threads ≤ 0 → OS_SHUTDOWN
+233 CPY 150 19          # to store current thread id in reg19
+234 SET 234 0
+
+# ==== 135–162: ROUND-ROBIN SCHEDULER ====
+235 SET 9 300           # to use as constant 10 value
+236 SUBI 150 300        # check the queue is ended or not/ mod10 opeartion
+237 JIF 300 239
+238 SET 0 150           # to turn back to beggining of the queue
+239 ADD 150 1
+240 CPY 150 4           # r4 ← current_tid
+241 ADD 4 1             # r4 ← r4 + 1
+242 CPY 180 5           # r5 ← total_user_threads (static, mem180)
+243 ADD 5 1             # r5 ← r5 + 1   (include OS)
+244 SUBI 4 5            # RIGHT: does mem[5] = next - total
+245 JIF 5 248           # RIGHT: if (next - total) ≤ 0 → skip wrap
+246 SET 0 4             # Turn the beginning of queue r4 ← 0
+247 SET 240 0           # jump 241
+
+# ==== 148–162: TERMINATED THREADS ====
+248  CPY  151   6       # r6 ← table_base (mem151)
+249  CPY  156   7       # r7 ← slot_size  (same mem151)
+250  SET   4   5        # r5 ← TERMINATED enum (mem160)
+251  CPY  150   8       # r8 ← current_tid
+252  SET    0   9       # r9 ← 0   ; offset
+253  JIF    8 257       # if counter ≤ 0 → done mult
+254  ADDI   9  7        # offset += slot_size
+255  ADD    8  -1       # counter--
+256  SET  252   0       # JMP → 253
+257  ADDI    6   9      # r6 ← base + offset
+258  ADD  6   1         # r6 ← state_addr = base+1
+259  CPYI   6   4       # r4 ← mem[state_addr]
+260  SUBI 5 4           # r5 ← 4- thread_state
+261  JIF  4 234         # if state==TERMINATED GO BACK TO SCHEDULER
+262  SET 269 0          # Go to BLOCKED CONTROLLL
+
+
+# ==== 170–208: BLOCKED THREADS ====
+270  CPY  151   6       # r6 ← table_base (mem151)
+271  CPY  156   7       # r7 ← slot_size  (same mem151)
+272  SET   3   5        # r5 ← BLOCKED enum (mem160)
+273  CPY  150   8       # r8 ← current_tid
+274  SET    0   9       # r9 ← 0   ; offset
+275  JIF    8 279       # if counter ≤ 0 → done mult
+276  ADDI   9  7        # offset += slot_size
+277  ADD    8  -1       # counter--
+278  SET  274   0       # JMP → 275
+279  ADDI    6   9      # r6 ← base + offset
+280  ADD  6   1         # r6 ← state_addr = base+1
+281  CPYI   6   4       # r4 ← mem[state_addr]
+282  SUBI   5   4       # r5 ← state – BLOCked
+283  JIF    4 290       # if state==BLOCKED GO TO PRN COUNT CHECK
+284  SET 299 0          # ELSE GO TO READY CHECK
+
+
+
+# ==== 190–196: PRN COUNT CHECK ====
+290 ADD 6 4             # reg6 = PRN count address
+291 CPYI 6 4            # reg4 = prn count 
+292 CPY 3 11            # reg11 = numberofinstexecuted so
+293 SUBI 4 11           # reg 4 =  -difference 
+294 ADD 11 100          # reg11 = 100 - difference  
+295 JIF 11 320          # GO TO CONTEXT SWITCH
+296 SET 234  0          # GO BACK SCHEDULER  / go back scheduling because next blocked thread not ready to scheduling
+
+
+
+# ==== 200–209: READY THREADS ====
+300  CPY  151   6       # r6 ← table_base (mem151)
+301  CPY  156   7       # r7 ← slot_size  (same mem151)
+302  SET   1   5        # r5 ← READY enum (mem160)
+303  CPY  150   8       # r8 ← current_tid
+304  SET    0   9       # r9 ← 0   ; offset
+305  JIF    8 309       # if counter ≤ 0 → done mult
+306  ADDI   9  7        # offset += slot_size
+307  ADD    8  -1       # counter--
+308  SET  304   0       # JMP → 305
+309  ADDI    6   9      # r6 ← base + offset
+310  ADD  6   1         # r6 ← state_addr = base+1
+311  CPYI   6   4       # r4 ← mem[state_addr]
+312  SUBI   4   5       # r5 ← state – READY
+313  JIF    5 320       # if state==READY → CONTEXT_SWITCH
+314  SET  234 0         # else GO BACK SCHEDULER
+
+
+
+# NEXT THREAD ID IS IN REGISTER 4
+
+# ==== 170–208: CONTEXT_SWITCH ====
+320  CPY  151   6       # r6 ← table_base
+321  CPY  19   7        # r7 ← current_tid
+322  ADD 7 0            # to get old thread's idd
+323  CPY 7 12           # to hold old thread's id to writing their pc (USER vs OS Thread)   
+324  SET    0   8       # r8 ← 0   ; offset
+325  JIF    7   329     # if counter ≤0 → done mult
+326  ADDI   8 156       # offset += slot_size
+327  ADD    7  -1       # counter--
+328  SET  324   0       # JMP → 325
+329  ADDI   6   8       # r6 ← base + offset
+330  CPY    6 200       #to store a pointer in reg200 for old thread's entry point on thread table (thread table location)
+331  ADD    6   2
+
+# ==== 232–266: SAVE OLD THREAD’S DATA AND SET READY STATE ====
+332  SET 0 15           # temp store old thread's PC
+333  SET 1 16           # temp store old thread's SP
+334  SET 3 17           # old thread's num of inst executed 
+335  JIF 12 337         # If old thread is OS then jump and set thread table entry to reg0 pc
+336  SET 18 15          # If current thread is User thread then take the pc value from reg 18
+337  CPYI2 15 6         # mem[r6] = old thread's PC
+338  ADD 6 1            # r6 ← SP address
+339  CPYI2 16 6         # mem[r6] = old thread's SP
+340  SET 341 0          # JMP → 342
+
+# SAVING OPERATION DONEE!!!!
+
+# ==== 242–248: UPDATE NEXT THREAD’S DATA ====
+342  CPY  150   7       # r7 ← current_tid
+343  SET    0   8       # r8 ← 0   ; offset
+344  JIF    7 348       # if counter ≤0 → done mult
+345  ADDI   8 156       # offset += slot_size
+346  ADD    7  -1       # counter--
+347  SET  343  0        # JMP → 344
+348  ADDI    8   151    # r6 ← base + offset
+
+
+# ==== 249–261: SET NEXT THREAD’S STATE TO RUNNING ====
+349  ADD    8   1       # r8 ← state-slot offset (1)
+350  SET  161   9       # r9 ← RUNNING enum
+351  CPYI2   9   8      # mem[r8] = RUNNING
+352  SET    1   9       # r9 ← 1   ; offset for next slot
+353  ADD    8   2       # r8 ← baseAddr + 2
+354  CPYI2   8   9      # SET SP OF THREAD TO 2
+355  ADD 200 1          # r200 ← baseAddr + 1
+356  SET 160 10         # r10 ← READY enum
+357  CPY 2 250          # to copy syscall resutl to reg250
+
+
+358  SET 1 251          # r251 ← 1   ; offset for next slot
+359  SUBI 251 250       # to check syscal result is HLT
+360  JIF 250 362        # if syscall result is HLT then go to 262
+361  CPYI2 10 200       # to set old thread's state as READY
+362 ADD 8 -1            # r8 ← baseAddr + 0
+363 CPYI 8 16           # mem[r8] = next thread's PC
+364 ADD 16 -1           # r16 ← next thread's PC - 1
+365 ADD 8 2             # r8 ← baseAddr + 2 (Starting PC address of thread in thread table)
+366 CPYI 8 17           # mem[r17] = next thread's Starting PC value
+367 SET 3 800           # to do copy operation of starting PC of next thread in reg800
+368 JIF 17 375          # if next thread's starting PC is 0 then go to 375 and store starting PC of next thread in thread table
+369 CPY 3 600           # to store instruction executed in reg400 for future calculation for CPU USAGE
+370 USER 16             # switch to user mode and jump to next thread's PC
+
+
+375 CPYI2 800 8         # to store starting PC of next thread in thread table
+376 SET 368 0           # unconditional jump to 370
+
+
+377 SET 499 0           # JMP → 500
+
+
+
+
+========SYSCALL-HANDLER=============================
+
+
+380 CPY 3 500           # take the number of inst executed so far 
+381 SUBI 500 600        # 500 ← 500 - numberofinstexecuted
+382  CPY  151   6       # r6 ← table_base (mem151)
+383  CPY  156   7       # r7 ← slot_size  (same mem151)
+384  CPY  150   8       # r8 ← current_tid
+385  SET    0   9       # r9 ← 0   ; offset
+386  JIF    8 390       # if counter ≤ 0 → done mult
+387  ADDI   9  7        # offset += slot_size
+388  ADD    8  -1       # counter--
+389  SET  385   0       # JMP → 386
+390  ADDI    6   9      # r6 ← base + offset
+391  ADD  6   6         # r6 ← numberofinstexecuted = base +6
+392  CPYI 6 601         # reg601 = thread'S numberofinstexecuted
+393  ADD 600 -2         # reg600 = 500 - numberofinstexecuted
+394  ADDI 601 600       # reg601 = thread'S numberofinstexecuted + (500 - numberofinstexecuted)
+395  SET 601 401        # reg401 = thread'S numberofinstexecuted + (500 - numberofinstexecuted)
+396  CPYI2 401 6        # mem[r6] = thread'S numberofinstexecuted + (500 - numberofinstexecuted)
+
+
+
+397 JIF 2 440           #FOR YIELD
+398 CPY 2 20            # reg20 = syscall result
+399 ADD 20 -1           # reg20 = syscall result - 1
+400 JIF 20 420          #FOR HLT
+401 SET 459 0           # JMP → 460   FOR PRN
+
+
+ 
+
+# — HLT path —
+
+420 ADD 153 -1          # reg153 = active_user_threads - 1
+421 CPY 150 15          # reg15 = current thread iiidd
+422 SET    0   8        # r8 ← 0   ; offset
+423 JIF    15 427       # if counter ≤0 → done mult
+424 ADDI   8 156        # offset += slot_size
+425 ADD    15  -1       # counter--
+426 SET  422   0        # JMP → 423
+427 ADDI 8 151          # r8 ← base + offset
+428 ADD 8 1             # r8 ← memory address of thread's state
+429 SET 163 9           # r9 ← TERMINATED enum
+430 CPYI2 9 8           # mem[r8] = TERMINATED / to set thread's state as TERMINATED
+431 SET 231 0           # to GO BACK SCHEDULER
+
+
+# -- YIELD path -- 
+
+440 SET 440 0           # unconditional jump to 341
+441 CPY 150 15          # reg15 = current thread iiidd
+442 SET    0   8        # r8 ← 0   ; offset
+443 JIF    15 447       # if counter ≤0 → done mult
+444 ADDI   8 156        # offset += slot_size
+445 ADD    15  -1       # counter--
+446 SET  442   0        # JMP → 443
+447 ADDI 8 151          # r8 ← base + offset
+448 ADD 8 1             # r8 ← memory address of thread's state
+449 SET 160 9           # r9 ← READY enum
+450 CPYI2 9 8           # mem[r8] = READY / to set thread's state as READY
+451 SET 231 0           # to GO BACK SCHEDULER
+
+
+
+# --- PRN ----
+
+460 CPY 150 15          # reg15 = current thread iiidd
+461 SET    0   8        # r8 ← 0 / offset
+462 JIF    15 466       # if counter ≤0 → done mult
+463 ADDI   8 156        # offset += slot_size
+464 ADD    15  -1       # counter--
+465 SET  461   0        # JMP → 462
+466 ADDI 8 151          # r8 ← base + offset
+467 ADD 8 1             # r8 ← memory address of thread's state
+468 SET 162 9           # r9 ← BLOCKED enum
+469 CPYI2 9 8           # mem[r8] = BLOCKED / to set thread's state as BLOCKED
+470 ADD 8 4             # r8 ← memory address of thread's number of instructions executed / CPU USAGE
+471 SET 3 9             # r9 ← number of instructions executed
+472 CPYI2 9 8           # mem[r8] = number of instructions executed
+473 SET 231 0           # to GO BACK SCHEDULER
+
+
+
+
+# ==== 500-501: OS_SHUTDOWN ====
+500  HLT               # OS_SHUTDOWN
+
+
+#====================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ==== THREAD #1 @1000-1085: SORT ====
+# ─────────────────────────────────────────────
+#  SELECTION SORT  +  PRINT ARRAY
+#  works for any N ≥ 2   (N in 1500, data in 1501…)
+# ─────────────────────────────────────────────
+
+
+1000 SYSCALL PRN 1700
+1001 SYSCALL PRN 1701
+1002  SET   1501 1601         # BASE pointer (1601) ← 1501
+
+# ----------- FIX 2: jump to the print-unsorted loop -----------
+1003  SET   1009 0            # unconditional jump to 1010
+# -------------- nothing else above this line changes --------------
+
+# ------------------- PRINT ORIGINAL ARRAY -------------------
+1010  SET    0 1800           # k = 0
+1011  CPY 1800 1610
+1012  SUBI 1500 1610          # 1610 = N – k
+1013  JIF 1610 1020           # if k ≥ N → exit print
+1014  CPY 1601 1613           # addr = BASE (=1501)
+1015  ADDI 1613 1800          # addr = BASE + k
+1016  CPYI 1613 1801          # value → 1801
+1017  SYSCALL PRN 1801        # print array[k]
+1018  ADD 1800 1              # k++
+1019  SET 1010 0              # loop
+
+
+# ───────── CONSTANT POINTERS ─────────
+# 1611 → 1608  (valMin)
+# 1612 → 1609  (temp / valX / val_i)
+1020  CPY 1500 1600          # N
+1021  SET 1501 1601          # BASE (=1501)
+1022  SET 1608 1611          # ptrValMin
+1023  SET 1609 1612          # ptrTemp
+1024  SET    0 1602          # i = 0
+# ───────── OUTER LOOP i = 0 … N-2 ─────────
+1025  CPY 1602 1610          # 1610 ← i
+1026  SUBI 1600 1610         # 1610 = N – i
+1027  ADD  1610 -1           # 1610 = N – i – 1
+1028  JIF  1610 1100         # if i ≥ N-1 → DONE
+1029  CPY 1602 1604          # min_idx = i
+1030  CPY 1601 1607          # addr_min = BASE
+1031  ADDI 1607 1604         # addr_min = BASE + min_idx
+1032  CPY 1607 1613          # 1613 → addr_min
+1033  CPYI2 1613 1611        # valMin = *addr_min
+        # j = i + 1
+1034  CPY 1602 1603
+1035  ADD 1603 1
+
+
+# ───────── INNER LOOP j = i+1 … N-1 ─────────
+1036  CPY 1603 1610
+1037  SUBI 1600 1610         # 1610 = N – j
+1038  JIF  1610 1080         # j ≥ N → exit inner
+1039  CPY 1601 1606          # addr_j = BASE
+1040  ADDI 1606 1603         # addr_j = BASE + j
+1041  CPY 1606 1613          # 1613 → addr_j
+1042  CPYI2 1613 1612        # valX  = *addr_j  → 1609
+        # diff = valX – valMin
+1043  CPY 1608 1610          # 1610 = valMin
+1044  SUBI 1609 1610         # 1610 = valX – valMin
+1045  JIF  1610 1050         # if valX ≤ valMin → new minimum
+     # continue scanning
+1046  ADD 1603 1
+1047  SET 1035 0             # unconditional jump (PC ←1026)
+# ---- new minimum found ----
+1050  CPY 1603 1604          # min_idx = j
+1051  CPY 1606 1607          # addr_min = addr_j
+1052  CPY 1609 1608          # valMin  = valX
+1053  ADD 1603 1
+1054  SET 1035 0             # back to inner loop
+
+
+# ───────── INNER DONE – swap array[i] & array[min_idx] ─────────
+1080  CPY 1601 1605          # addr_i = BASE
+1081  ADDI 1605 1602         # addr_i = BASE + i
+1082  CPY 1605 1615          # 1615 → addr_i
+1083  CPY 1607 1616          # 1616 → addr_min
+1084  CPYI2 1615 1612        # temp = *addr_i          → 1609
+1085  CPYI2 1616 1615        # *addr_i   ← *addr_min
+1086  CPYI2 1612 1616        # *addr_min ← temp
+1087  ADD 1602 1             # i++
+1088  SYSCALL YIELD
+1089  SET 1024 0             # jump to OUTER LOOP
+
+
+# ───────── SORT DONE – print array ─────────
+1100 SYSCALL PRN 1702
+1101 SYSCALL PRN 1703
+1102  SET    0 1800          # k = 0
+1103  CPY 1800 1610
+1104  SUBI 1600 1610         # 1610 = N – k
+1105  JIF 1610 1120          # if k ≥ N → exit print
+1106  CPY 1601 1613          # addr = BASE
+1107  ADDI 1613 1800         # addr = BASE + k
+1108  CPYI 1613 1801         # 1801 = *addr
+1109  SYSCALL PRN 1801       # print value
+1110  ADD 1800 1             # k++
+1111  SET 1102 0             # loop
+
+# ───────── END ─────────
+1120  SYSCALL PRN 1704
+1121  SYSCALL HLT
+
+
+
+
+
+# ==== 2000–2057: THREAD    #2 – Linear Search ====
+# ─────────────────────────────────────────────
+# LINEAR SEARCH — indirect N and KEY
+#
+# Indirect inputs
+#     2500 : pointer to N
+#     2501 : pointer to KEY
+#     2502 : pointer to array[0]
+#
+# Direct outputs
+#     2512 : FOUND  (1 / 0)
+#     2513 : INDEX  (position, –1 if not found)
+#
+# Scratch cells
+#     2520 : i
+#     2521 : tmp_len   (N – i)
+#     2522 : addr      (BASE + i)
+#     2523 : val       (array[i])
+#     2524 : diff1     (val – key)
+#     2525 : diff2     (key – val)
+#     2526 : N         (cached value)
+#     2527 : KEY       (cached value)
+# ─────────────────────────────────────────────
+
+
+2000  SYSCALL PRN 2700
+2001  SYSCALL PRN 2701
+2002  SYSCALL PRN 2601
+2003  SYSCALL PRN 2702
+2004  SYSCALL PRN 2600
+
+2005  CPYI  2500 2526       # N   ← *[2500]
+2006  CPYI  2501 2527       # KEY ← *[2501]
+2007  SET    0    2520      # i   ← 0
+
+
+        # ——— LOOP_START ———
+2008  CPY   2520 2521       # tmp_len ← i
+2009  SUBI  2526 2521       # tmp_len ← N – i
+2010  JIF   2521 2035       # if N–i ≤ 0 → NOT_FOUND
+
+        # val = array[i]
+2011  CPY   2502 2522       # addr ← BASE_PTR
+2012  ADDI  2522 2520       # addr ← BASE + i
+2013  CPYI  2522 2523       # val  ← *(BASE+i)
+
+        # diff1 = val – key
+2014  CPY   2527 2524       # diff1 ← KEY
+2015  SUBI  2523 2524       # diff1 ← val – KEY
+2016  JIF   2524 2020       # if val ≤ KEY → check diff2
+
+        # —— val > KEY ——
+2017  ADD   2520 1          # i++
+2018  SET   2007 0          # unconditional jump to LOOP_START
+
+        # diff2 = key – val
+2020  CPY   2523 2525       # diff2 ← val
+2021  SUBI  2527 2525       # diff2 ← KEY – val
+2022  JIF   2525 2025       # if KEY ≤ val → FOUND
+
+        # —— val < KEY ——
+2023  ADD   2520 1          # i++
+2024  SET   2007 0          # unconditional jump to LOOP_START
+
+        # ——— FOUND ———
+2025  CPY   2520 2513       # INDEX ← i
+2026  SET    1    2512      # FOUND ← 1
+2027  SET   2039 0          # goto END
+
+        # ——— NOT_FOUND ———
+2035  SET    0    2512      # FOUND ← 0
+2036  SET   -1    2513      # INDEX ← –1
+2037  SET   2039 0          # goto END
+
+        # ——— END / HALT ———
+2040  SYSCALL PRN 2705
+2041  JIF 2512 2045
+2042  SYSCALL PRN 2703
+2043  SYSCALL PRN 2513
+2044  SET 2045 0
+2045  SYSCALL PRN 2704
+2046  SYSCALL PRN 2706
+2047  SYSCALL HLT
+
+
+
+
+
+
+
+# ==== 3000–3052: THREAD    #3 – Factorial ====
+# ─────────────────────────────────────────────
+#  FACTORIAL (repeated-addition multiplication)
+#  Inputs :  N  at 3500   (0 ≤ N ≤ 12 fits 32-bit signed)
+#  Output :  N! at 3501   and printed to console
+#  Scratch : 3502-3505
+#  ISA    : SET  CPY  CPYI  CPYI2  ADD  ADDI  SUBI  JIF  SYSCALL PRN
+# ─────────────────────────────────────────────
+
+3000 SYSCALL PRN 3600
+3001 SYSCALL PRN 3601
+3002 SYSCALL PRN 3500
+
+
+# ---------- initialisation ----------
+3003  SET   1    3501        # RESULT ← 1
+3004  SET   1    3502        # i      ← 1   (will be pre-incremented)
+
+# ========== OUTER LOOP (label 3002) ==========
+3005  ADD   3502 1           # i++
+
+        # ---------- multiply RESULT *= i ----------
+3006  SET   0    3503        # TEMP    ← 0
+3007  CPY   3502 3504        # COUNTER ← i
+
+# ----- INNER LOOP: TEMP += RESULT, COUNTER-- -----
+3008  CPY   3504 3505        # DIFF ← COUNTER
+3009  JIF   3505 3015        # if COUNTER ≤ 0 → leave inner loop
+
+3010  ADDI  3503 3501        # TEMP += RESULT
+3011  ADD   3504 -1          # COUNTER--
+3012  SET   3007 0           # unconditional jump to 3008
+        # (writes 3008 into MEM[0], i.e. PC)
+
+# ----- FINISH THIS MULTIPLICATION -----
+3015  CPY   3503 3501        # RESULT ← TEMP
+
+        # ---------- check loop exit ----------
+3016  CPY   3502 3505        # DIFF ← i
+3017  SUBI  3500 3505        # DIFF ← N − i
+3018  JIF   3505 3025        # if i ≥ N  → DONE
+
+3019  SET   3004 0           # jump back to OUTER LOOP
+        # (writes 3005 into MEM[0])
+
+# ========== DONE ==========
+3025  SYSCALL PRN 3602
+3026  SYSCALL PRN 3501       # print RESULT (N!)
+3027  SYSCALL PRN 3603
+
+3028  SYSCALL HLT  # (return to OS / halt here)
+
+
+
+# ==== 4000-4999: THREAD    #4 – Test ====
+4000 SYSCALL PRN 4500
+4001 SYSCALL PRN 4501
+4002 SYSCALL YIELD
+4003 SYSCALL PRN 4502
+4004 SYSCALL PRN 4503
+4005 SYSCALL PRN 4504
+4006 SYSCALL PRN 4505
+4007 SYSCALL PRN 4506
+4008 SYSCALL HLT
+
+#============THREAD 5 - SQUARE NUMBERS ===========
+
+5000 SYSCALL PRN 5700
+# ───────── INITIALISE ─────────
+5001  SET   1     5501        # i    ← 1
+5002  SET   1     5502        # SQR  ← 1  (1²)
+5003  SET   3     5503        # DIFF ← 3  (next increment = 3)
+
+# ───────── MAIN LOOP ─────────        (label 5003)
+5004  SYSCALL PRN 5502        # print current square
+
+        # ----- exit test: if i ≥ N  →  halt -----
+5005  CPY   5501 5505         # scratch ← i
+5006  SUBI  5500 5505         # scratch ← N − i
+5007  JIF   5505 5015         # jump out when N − i ≤ 0
+
+        # ----- build next square -----
+5008  ADDI  5502 5503         # SQR  += DIFF
+5009  ADD   5503  2           # DIFF += 2
+5010  ADD   5501  1           # i    += 1
+5011  SET   5003 0            # unconditional jump to MAIN LOOP
+                              #   (writes 5003 into PC cell 0)
+
+
+
+5015 SYSCALL PRN 5701
+5016 SYSCALL HLT
+
+
+#============THREAD 6 ===========
+6000 SYSCALL PRN 6500
+6001 SYSCALL PRN 6501
+6002 SYSCALL HLT
+
+#============THREAD 7 ===========
+7000 SYSCALL PRN 7500
+7001 SYSCALL PRN 7501 
+7002 SYSCALL HLT
+
+
+#============THREAD 8 ===========
+8000 SYSCALL PRN 8500
+8001 SYSCALL PRN 8501
+8002 SYSCALL HLT
+
+#============THREAD 9 ===========
+9000 SYSCALL PRN 9500
+9001 SYSCALL PRN 9501
+9002 SYSCALL HLT
+
+#============THREAD 10 ===========
+10000 SYSCALL PRN 10500
+10001 SYSCALL PRN 10501
+10002 SYSCALL HLT
+
+
+
+
+End Instruction Section
+
+
+
+
+
+
